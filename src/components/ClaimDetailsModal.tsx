@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Clock,
   Send,
+  MapPin,
 } from 'lucide-react';
 
 interface ClaimDetailsModalProps {
@@ -39,49 +40,115 @@ export const ClaimDetailsModal: React.FC<ClaimDetailsModalProps> = ({
   if (!claim) return null;
 
   const targetItem = items.find(i => i.id === claim.itemId);
-  const isReporter = currentUser && currentUser.uid === claim.reporterId;
-  const isClaimant = currentUser && currentUser.uid === claim.claimantId;
+  const isReporter = Boolean(
+    currentUser &&
+      ((claim.reporterId && currentUser.uid === claim.reporterId) ||
+        (targetItem && targetItem.ownerId === currentUser.uid))
+  );
+  const isClaimant = Boolean(
+    currentUser && claim.claimantId && currentUser.uid === claim.claimantId
+  );
 
-  // Determine whose contact details to display:
-  // If currentUser is the reporter, show claimant's profile details.
-  // If currentUser is the claimant, show reporter's profile details (or claimant's if alone).
-  // If neither (e.g. third-party student who lost matching item), show both or claimant's details.
-  const displayContact = isReporter
-    ? {
-        role: 'Claimant / Finder',
-        name: claim.claimantName || 'Campus Student',
+  // Determine whose contact details to display
+  // Case A: Target item is LOST and currentUser is the owner (reporter)
+  // => The person who submitted the claim is the FINDER who found their lost item!
+  // Case B: Target item is FOUND and currentUser is the finder (reporter)
+  // => The person who submitted the claim is the CLAIMANT who lost it!
+  // Case C: CurrentUser is the claimant => Show the reporter's contact info!
+  const isLostItemReport = claim.itemType === 'lost' || (targetItem && targetItem.type === 'lost');
+
+  let displayContact = {
+    role: 'Claimant / Finder',
+    name: 'Campus Member',
+    email: 'student@campus.edu',
+    phone: '(555) 234-5678',
+    department: 'Campus Student Body',
+    campusId: 'CAMPUS-STUDENT',
+  };
+
+  if (isReporter) {
+    if (isLostItemReport) {
+      displayContact = {
+        role: 'Finder who Located Your Item',
+        name: claim.claimantName || 'Campus Finder',
         email: claim.claimantEmail || 'student@campus.edu',
         phone: claim.claimantPhone || '(555) 234-5678',
         department: claim.claimantDepartment || 'Campus Student Body',
-        campusId: claim.claimantCampusId || 'CAMPUS-' + claim.claimantId.substring(0, 6).toUpperCase(),
-      }
-    : {
-        role: claim.itemType === 'found' ? 'Finder / Reporter' : 'Item Owner',
-        name: claim.reporterName || targetItem?.ownerName || 'Campus Member',
-        email: claim.reporterEmail || targetItem?.ownerEmail || 'campus-lostfound@campus.edu',
-        phone: claim.reporterPhone || '(555) 876-5432',
-        department: claim.reporterDepartment || 'Campus Student Body',
-        campusId: claim.reporterCampusId || 'CAMPUS-' + claim.reporterId.substring(0, 6).toUpperCase(),
+        campusId:
+          claim.claimantCampusId ||
+          (claim.claimantId
+            ? 'CAMPUS-' + String(claim.claimantId).substring(0, 6).toUpperCase()
+            : 'CAMPUS-STUDENT'),
       };
+    } else {
+      displayContact = {
+        role: 'Ownership Claimant',
+        name: claim.claimantName || 'Campus Claimant',
+        email: claim.claimantEmail || 'student@campus.edu',
+        phone: claim.claimantPhone || '(555) 234-5678',
+        department: claim.claimantDepartment || 'Campus Student Body',
+        campusId:
+          claim.claimantCampusId ||
+          (claim.claimantId
+            ? 'CAMPUS-' + String(claim.claimantId).substring(0, 6).toUpperCase()
+            : 'CAMPUS-STUDENT'),
+      };
+    }
+  } else if (isClaimant) {
+    displayContact = {
+      role: isLostItemReport ? 'Item Owner' : 'Finder / Reporter',
+      name: claim.reporterName || targetItem?.ownerName || 'Campus Member',
+      email: claim.reporterEmail || targetItem?.ownerEmail || 'campus-lostfound@campus.edu',
+      phone: claim.reporterPhone || '(555) 876-5432',
+      department: claim.reporterDepartment || 'Campus Member',
+      campusId:
+        claim.reporterCampusId ||
+        (claim.reporterId
+          ? 'CAMPUS-' + String(claim.reporterId).substring(0, 6).toUpperCase()
+          : 'CAMPUS-MEMBER'),
+    };
+  } else {
+    // Default fallback: show claimant details
+    displayContact = {
+      role: 'Campus Member',
+      name: claim.claimantName || claim.reporterName || targetItem?.ownerName || 'Campus Member',
+      email: claim.claimantEmail || claim.reporterEmail || targetItem?.ownerEmail || 'student@campus.edu',
+      phone: claim.claimantPhone || claim.reporterPhone || '(555) 234-5678',
+      department: claim.claimantDepartment || claim.reporterDepartment || 'Campus Student Body',
+      campusId:
+        claim.claimantCampusId ||
+        (claim.claimantId
+          ? 'CAMPUS-' + String(claim.claimantId).substring(0, 6).toUpperCase()
+          : 'CAMPUS-STUDENT'),
+    };
+  }
 
   const handleCopy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(null), 2000);
+    try {
+      navigator.clipboard.writeText(text);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 2000);
+    } catch (e) {
+      console.warn('Could not copy:', e);
+    }
   };
 
   const handleCopyAll = () => {
-    const summary = `ReFound Contact Information:
+    try {
+      const summary = `ReFound Contact Information:
 Name: ${displayContact.name}
 Role: ${displayContact.role}
 Email: ${displayContact.email}
 Phone: ${displayContact.phone}
 Department: ${displayContact.department}
 Student ID: ${displayContact.campusId}
-Item: ${claim.itemTitle}`;
-    navigator.clipboard.writeText(summary);
-    setCopied('all');
-    setTimeout(() => setCopied(null), 2000);
+Item: ${claim.itemTitle || targetItem?.title || 'Campus Item'}`;
+      navigator.clipboard.writeText(summary);
+      setCopied('all');
+      setTimeout(() => setCopied(null), 2000);
+    } catch (e) {
+      console.warn('Could not copy all:', e);
+    }
   };
 
   const handleReviewAction = async (status: 'accepted' | 'rejected' | 'returned') => {
@@ -89,11 +156,31 @@ Item: ${claim.itemTitle}`;
     try {
       await reviewClaim(claim.id, status, reviewNote);
     } catch (e) {
-      console.error(e);
+      console.error('Error in handleReviewAction:', e);
     } finally {
       setSubmittingReview(false);
     }
   };
+
+  const modalTitle = isLostItemReport
+    ? 'Someone Found Your Lost Item'
+    : 'Ownership Claim & Contact Details';
+
+  const modalSubtitle = isLostItemReport
+    ? 'A fellow student reported locating your lost item. Review their message and contact them below.'
+    : 'Review verification answers and student contact details to coordinate campus return.';
+
+  const messageHeading = isLostItemReport
+    ? "Finder's Message & Location Note"
+    : 'Submitted Verification Message & Identifying Answers';
+
+  const messageBody =
+    claim.identifyingAnswers ||
+    'The finder has submitted a report that they located this item on campus. Use the contact information above to arrange collection.';
+
+  const formattedDate = claim.createdAt
+    ? new Date(claim.createdAt).toLocaleString()
+    : 'Recently';
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -102,7 +189,7 @@ Item: ${claim.itemTitle}`;
         <button
           id="btn-close-claim-details"
           onClick={onClose}
-          className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+          className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -115,9 +202,7 @@ Item: ${claim.itemTitle}`;
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg font-bold text-slate-900">
-                  {claim.itemType === 'found' ? 'Found Item Claim & Contact' : 'Ownership Claim & Details'}
-                </h2>
+                <h2 className="text-lg font-bold text-slate-900">{modalTitle}</h2>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                     claim.status === 'accepted'
@@ -134,8 +219,9 @@ Item: ${claim.itemTitle}`;
               </div>
               <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                <span>Submitted {new Date(claim.createdAt).toLocaleString()}</span>
+                <span>Submitted {formattedDate}</span>
               </p>
+              <p className="text-xs text-slate-600 mt-1">{modalSubtitle}</p>
             </div>
           </div>
 
@@ -175,7 +261,7 @@ Item: ${claim.itemTitle}`;
                     onClose();
                     onNavigateItem(targetItem.id);
                   }}
-                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1 transition-colors"
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <span>View Item</span>
                   <ExternalLink className="w-3 h-3" />
@@ -188,11 +274,11 @@ Item: ${claim.itemTitle}`;
           <div className="p-5 bg-gradient-to-br from-indigo-50/50 via-white to-slate-50 rounded-2xl border border-indigo-100 space-y-4 shadow-2xs">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-lg flex items-center justify-center shadow-xs shadow-indigo-200">
-                  {displayContact.name.charAt(0).toUpperCase()}
+                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-lg flex items-center justify-center shadow-xs shadow-indigo-200 shrink-0">
+                  {displayContact.name ? displayContact.name.charAt(0).toUpperCase() : 'U'}
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="font-bold text-sm text-slate-900">
                       {displayContact.name}
                     </h3>
@@ -209,7 +295,7 @@ Item: ${claim.itemTitle}`;
 
               <button
                 onClick={handleCopyAll}
-                className="px-2.5 py-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50/70 hover:bg-indigo-100/70 rounded-lg flex items-center gap-1 transition-colors"
+                className="px-2.5 py-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50/70 hover:bg-indigo-100/70 rounded-lg flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
                 title="Copy all contact information to clipboard"
               >
                 {copied === 'all' ? (
@@ -241,7 +327,7 @@ Item: ${claim.itemTitle}`;
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleCopy(displayContact.email, 'email')}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
                     title="Copy email"
                   >
                     {copied === 'email' ? (
@@ -251,7 +337,9 @@ Item: ${claim.itemTitle}`;
                     )}
                   </button>
                   <a
-                    href={`mailto:${displayContact.email}?subject=ReFound - Lost & Found Item Coordination: ${encodeURIComponent(claim.itemTitle)}`}
+                    href={`mailto:${displayContact.email}?subject=ReFound - Lost & Found Item: ${encodeURIComponent(
+                      claim.itemTitle || targetItem?.title || 'Campus Item'
+                    )}`}
                     className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-[11px] flex items-center gap-1 transition-colors"
                   >
                     <Mail className="w-3 h-3" />
@@ -273,7 +361,7 @@ Item: ${claim.itemTitle}`;
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleCopy(displayContact.phone, 'phone')}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
                     title="Copy phone"
                   >
                     {copied === 'phone' ? (
@@ -324,18 +412,19 @@ Item: ${claim.itemTitle}`;
           <div className="space-y-2">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Submitted Verification Message & Answers</span>
+              <span>{messageHeading}</span>
             </h4>
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-              {claim.identifyingAnswers}
+              {messageBody}
             </div>
           </div>
 
           {/* REVIEW NOTE (if already submitted or in progress) */}
           {claim.reviewNote && (
             <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs space-y-1">
-              <span className="font-bold text-indigo-900 block">
-                Reporter Review & Pickup Instructions:
+              <span className="font-bold text-indigo-900 block flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-indigo-700" />
+                <span>Pickup Instructions & Review Note:</span>
               </span>
               <p className="text-indigo-800 italic">"{claim.reviewNote}"</p>
             </div>
@@ -345,14 +434,20 @@ Item: ${claim.itemTitle}`;
           {isReporter && claim.status === 'pending' && (
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
               <label className="block text-xs font-bold text-slate-800">
-                Add Pickup Location or Coordination Note:
+                {isLostItemReport
+                  ? 'Add Meeting Location or Message for Finder:'
+                  : 'Add Pickup Location or Coordination Note for Claimant:'}
               </label>
               <input
                 type="text"
-                placeholder="e.g. Meet at Student Union Front Desk at 3:00 PM, reference ticket #..."
+                placeholder={
+                  isLostItemReport
+                    ? 'e.g. Thanks so much! Meet me at Student Union Front Desk at 3:00 PM...'
+                    : 'e.g. Meet at Campus Library Front Desk at 2:00 PM with your student ID...'
+                }
                 value={reviewNote}
                 onChange={e => setReviewNote(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
               />
 
               <div className="flex items-center justify-end gap-2.5 pt-1">
@@ -360,18 +455,22 @@ Item: ${claim.itemTitle}`;
                   type="button"
                   disabled={submittingReview}
                   onClick={() => handleReviewAction('rejected')}
-                  className="px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
                 >
-                  Decline Claim
+                  {isLostItemReport ? 'Not My Item / Decline' : 'Decline Claim'}
                 </button>
                 <button
                   type="button"
                   disabled={submittingReview}
                   onClick={() => handleReviewAction('accepted')}
-                  className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Accept Claim & Reveal Pickup</span>
+                  <span>
+                    {isLostItemReport
+                      ? 'Accept & Coordinate Return'
+                      : 'Accept Claim & Unlock Pickup'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -383,16 +482,31 @@ Item: ${claim.itemTitle}`;
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <span>
-                  <strong>Claim Accepted!</strong> Contact details unlocked for in-person campus handover.
+                  <strong>Coordination In Progress!</strong> Reach out directly using the phone or email above to complete item handover.
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => handleReviewAction('returned')}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shrink-0 transition-colors shadow-2xs"
-              >
-                Confirm Item Returned
-              </button>
+              {isReporter && (
+                <button
+                  type="button"
+                  disabled={submittingReview}
+                  onClick={() => handleReviewAction('returned')}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shrink-0 transition-colors shadow-2xs cursor-pointer"
+                >
+                  Confirm Item Returned / Handover Done
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* IF CLAIM RETURNED */}
+          {claim.status === 'returned' && (
+            <div className="p-4 bg-slate-900 text-white rounded-2xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span>
+                  <strong>Handover Completed!</strong> This item was successfully returned to its rightful owner.
+                </span>
+              </div>
             </div>
           )}
 
@@ -400,7 +514,7 @@ Item: ${claim.itemTitle}`;
           <div className="flex justify-end pt-1">
             <button
               onClick={onClose}
-              className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
+              className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
             >
               Close
             </button>
@@ -410,3 +524,4 @@ Item: ${claim.itemTitle}`;
     </div>
   );
 };
+

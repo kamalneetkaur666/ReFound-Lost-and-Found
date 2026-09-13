@@ -11,10 +11,16 @@ import { AuthModal } from './components/AuthModal.tsx';
 import { ClaimModal } from './components/ClaimModal.tsx';
 import { ClaimDetailsModal } from './components/ClaimDetailsModal.tsx';
 import { ItemReport } from './types.ts';
-import { Sparkles, ShieldCheck, Heart, Github } from 'lucide-react';
+import { Sparkles, ShieldCheck, Heart, Github, Bell, X, ArrowRight } from 'lucide-react';
 
 function AppContent() {
-  const { selectedClaimForModal, setSelectedClaimForModal } = useApp();
+  const {
+    selectedClaimForModal,
+    setSelectedClaimForModal,
+    activeToast,
+    dismissToast,
+    openClaimDetailsModal,
+  } = useApp();
   const [currentView, setCurrentView] = useState<string>('landing');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -131,6 +137,56 @@ function AppContent() {
           onClose={() => setSelectedClaimForModal(null)}
           onNavigateItem={handleItemClick}
         />
+      )}
+
+      {/* Floating Active Toast Banner */}
+      {activeToast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <div className="bg-white rounded-2xl p-4 shadow-2xl border border-indigo-100 flex items-start gap-3.5 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h4 className="font-bold text-xs text-slate-900 line-clamp-1">
+                {activeToast.title}
+              </h4>
+              <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
+                {activeToast.message}
+              </p>
+              {(activeToast.claimId || activeToast.itemId) && (
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (activeToast.claimId) {
+                        openClaimDetailsModal(activeToast.claimId, activeToast.itemId);
+                      } else if (activeToast.itemId) {
+                        openClaimDetailsModal(activeToast.itemId, activeToast.itemId);
+                      }
+                      dismissToast();
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <span>View Claim & Message</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={dismissToast}
+                    className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={dismissToast}
+              className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Footer */}

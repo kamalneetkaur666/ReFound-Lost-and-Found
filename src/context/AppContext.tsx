@@ -65,7 +65,11 @@ interface AppContextType {
   dismissToast: () => void;
   selectedClaimForModal: Claim | null;
   setSelectedClaimForModal: (claim: Claim | null) => void;
-  openClaimDetailsModal: (claimOrId: Claim | string, relatedItemId?: string, notification?: NotificationItem) => void;
+  openClaimDetailsModal: (
+    claimOrIdOrNotif: Claim | NotificationItem | string,
+    relatedItemId?: string,
+    notification?: NotificationItem
+  ) => void;
   updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
@@ -125,52 +129,171 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const dismissToast = () => setActiveToast(null);
 
   const openClaimDetailsModal = (
-    claimOrId: Claim | string,
+    claimOrIdOrNotif: Claim | NotificationItem | string,
     relatedItemId?: string,
     notification?: NotificationItem
   ) => {
-    if (typeof claimOrId !== 'string') {
-      setSelectedClaimForModal(claimOrId);
+    // 1. If passed a string ID
+    if (typeof claimOrIdOrNotif === 'string') {
+      const idToFind = claimOrIdOrNotif;
+      let found = claims.find(c => c.id === idToFind);
+      if (!found && relatedItemId) {
+        found = claims.find(c => c.itemId === relatedItemId);
+      }
+      if (found) {
+        setSelectedClaimForModal(found);
+        return;
+      }
+      if (notification) {
+        setSelectedClaimForModal(buildClaimFromNotification(notification, relatedItemId));
+        return;
+      }
+      // Look up item
+      const item = items.find(i => i.id === relatedItemId);
+      if (item) {
+        setSelectedClaimForModal(buildDefaultClaimForItem(item, idToFind));
+        return;
+      }
       return;
     }
-    // Search existing claims
-    let found = claims.find(c => c.id === claimOrId);
-    if (!found && relatedItemId) {
-      found = claims.find(c => c.itemId === relatedItemId);
+
+    // 2. If passed an object: check if it's a NotificationItem
+    const candidate = claimOrIdOrNotif as any;
+    const isNotification =
+      candidate &&
+      (('userId' in candidate && 'message' in candidate) ||
+        ('title' in candidate && !('claimantId' in candidate && 'reporterId' in candidate)));
+
+    if (isNotification) {
+      const notif = candidate as NotificationItem;
+      // Try to find the existing claim in claims list first
+      let existingClaim = notif.relatedClaimId
+        ? claims.find(c => c.id === notif.relatedClaimId)
+        : undefined;
+      if (!existingClaim && notif.relatedItemId) {
+        existingClaim = claims.find(c => c.itemId === notif.relatedItemId);
+      }
+      if (existingClaim) {
+        setSelectedClaimForModal(existingClaim);
+        return;
+      }
+
+      // If not in state yet, build a clean, complete Claim object from notification
+      const constructed = buildClaimFromNotification(notif, relatedItemId);
+      setSelectedClaimForModal(constructed);
+      return;
     }
-    if (found) {
-      setSelectedClaimForModal(found);
-    } else if (notification) {
-      // Create fallback claim from notification
-      const fallbackClaim: Claim = {
-        id: notification.relatedClaimId || claimOrId || 'claim-' + Date.now(),
-        itemId: notification.relatedItemId || relatedItemId || '',
-        itemTitle:
-          notification.title
-            .replace('Claim Alert on Matching Found Item', '')
-            .replace('Someone Found Your Item!', '')
-            .replace('New Ownership Claim Submitted', '')
-            .trim() || 'Lost & Found Item',
-        itemType: 'found',
-        claimantId: notification.senderId || 'student-user',
-        claimantName: notification.senderName || 'Campus Student',
-        claimantEmail: notification.senderEmail || 'student@campus.edu',
-        claimantPhone: notification.senderPhone || '(555) 234-5678',
-        claimantDepartment: notification.senderDepartment || 'Campus Student Body',
-        claimantCampusId: notification.senderCampusId || 'CAMPUS-STUDENT',
-        reporterId: currentUser?.uid || '',
-        reporterName: currentUser?.displayName,
-        reporterEmail: currentUser?.email,
-        reporterPhone: currentUser?.phone,
-        reporterDepartment: currentUser?.department,
-        reporterCampusId: currentUser?.campusId,
-        identifyingAnswers: notification.claimAnswers || notification.message,
-        status: 'pending',
-        createdAt: notification.createdAt,
-        updatedAt: notification.createdAt,
+
+    // 3. If passed an actual Claim object: ensure all fields are safely normalized
+    if (candidate && typeof candidate === 'object') {
+      const normalized: Claim = {
+        ...candidate,
+        id: candidate.id || 'claim-' + Date.now(),
+        itemId: candidate.itemId || '',
+        itemTitle: candidate.itemTitle || 'Lost & Found Item',
+        itemType: candidate.itemType || 'lost',
+        claimantId: candidate.claimantId || 'claimant-user',
+        claimantName: candidate.claimantName || 'Campus Student',
+        claimantEmail: candidate.claimantEmail || 'student@campus.edu',
+        claimantPhone: candidate.claimantPhone || '(555) 234-5678',
+        claimantDepartment: candidate.claimantDepartment || 'Campus Student Body',
+        claimantCampusId:
+          candidate.claimantCampusId ||
+          (candidate.claimantId
+            ? 'CAMPUS-' + String(candidate.claimantId).substring(0, 6).toUpperCase()
+            : 'CAMPUS-STUDENT'),
+        reporterId: candidate.reporterId || '',
+        reporterName: candidate.reporterName || 'Campus Member',
+        reporterEmail: candidate.reporterEmail || 'campus@campus.edu',
+        reporterPhone: candidate.reporterPhone || '(555) 876-5432',
+        reporterDepartment: candidate.reporterDepartment || 'Campus Member',
+        reporterCampusId:
+          candidate.reporterCampusId ||
+          (candidate.reporterId
+            ? 'CAMPUS-' + String(candidate.reporterId).substring(0, 6).toUpperCase()
+            : 'CAMPUS-MEMBER'),
+        identifyingAnswers:
+          candidate.identifyingAnswers ||
+          candidate.message ||
+          'Verification details submitted on campus listing.',
+        status: candidate.status || 'pending',
+        reviewNote: candidate.reviewNote || '',
+        createdAt: candidate.createdAt || new Date().toISOString(),
+        updatedAt: candidate.updatedAt || new Date().toISOString(),
       };
-      setSelectedClaimForModal(fallbackClaim);
+      setSelectedClaimForModal(normalized);
     }
+  };
+
+  const buildClaimFromNotification = (notif: NotificationItem, fallbackItemId?: string): Claim => {
+    const targetItemId = notif.relatedItemId || fallbackItemId || '';
+    const targetItem = items.find(i => i.id === targetItemId);
+
+    // If targetItem is lost, this claim is someone who FOUND it
+    const itemType = targetItem?.type || 'lost';
+    const isLostOwner = targetItem && currentUser && targetItem.ownerId === currentUser.uid;
+
+    const claimantName = notif.senderName || (itemType === 'lost' ? 'Campus Finder' : 'Campus Claimant');
+    const claimantEmail = notif.senderEmail || 'student@campus.edu';
+    const claimantPhone = notif.senderPhone || '(555) 234-5678';
+    const claimantDept = notif.senderDepartment || 'Campus Student Body';
+    const claimantCampusId =
+      notif.senderCampusId ||
+      (notif.senderId ? 'CAMPUS-' + notif.senderId.substring(0, 6).toUpperCase() : 'CAMPUS-STUDENT');
+
+    const reporterName =
+      targetItem?.ownerName || (isLostOwner ? currentUser.displayName : 'Campus Member');
+    const reporterEmail =
+      targetItem?.ownerEmail || (isLostOwner ? currentUser.email : 'campus-lostfound@campus.edu');
+    const reporterPhone = '(555) 876-5432';
+
+    return {
+      id: notif.relatedClaimId || notif.id || 'claim-' + Date.now(),
+      itemId: targetItemId,
+      itemTitle: targetItem?.title || notif.title.replace(/^New Ownership Claim Submitted|Someone Found Your Item!|Claim Alert on Matching Found Item/i, '').trim() || 'Campus Lost & Found Item',
+      itemType: itemType,
+      claimantId: notif.senderId || 'claimant-user',
+      claimantName,
+      claimantEmail,
+      claimantPhone,
+      claimantDepartment: claimantDept,
+      claimantCampusId,
+      reporterId: targetItem?.ownerId || (isLostOwner ? currentUser.uid : ''),
+      reporterName,
+      reporterEmail,
+      reporterPhone,
+      reporterDepartment: 'Campus Member',
+      reporterCampusId: targetItem?.ownerId ? 'CAMPUS-' + targetItem.ownerId.substring(0, 6).toUpperCase() : 'CAMPUS-MEMBER',
+      identifyingAnswers: notif.claimAnswers || notif.message || 'The finder reported locating this item on campus. Contact them above to coordinate return.',
+      status: 'pending',
+      createdAt: notif.createdAt || new Date().toISOString(),
+      updatedAt: notif.createdAt || new Date().toISOString(),
+    };
+  };
+
+  const buildDefaultClaimForItem = (item: ItemReport, claimId: string): Claim => {
+    return {
+      id: claimId,
+      itemId: item.id,
+      itemTitle: item.title,
+      itemType: item.type,
+      claimantId: 'campus-student',
+      claimantName: 'Campus Student',
+      claimantEmail: 'student@campus.edu',
+      claimantPhone: '(555) 234-5678',
+      claimantDepartment: 'Campus Student Body',
+      claimantCampusId: 'CAMPUS-STUDENT',
+      reporterId: item.ownerId,
+      reporterName: item.ownerName,
+      reporterEmail: item.ownerEmail,
+      reporterPhone: '(555) 876-5432',
+      reporterDepartment: 'Campus Member',
+      reporterCampusId: 'CAMPUS-' + item.ownerId.substring(0, 6).toUpperCase(),
+      identifyingAnswers: 'Verification details for this item report.',
+      status: 'pending',
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    };
   };
 
   const updateUserProfile = async (updates: Partial<UserProfile>) => {
