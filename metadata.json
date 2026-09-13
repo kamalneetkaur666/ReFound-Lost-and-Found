@@ -1,0 +1,6 @@
+{
+  "name": "ReFound",
+  "description": "Smart campus Lost & Found platform connecting lost and found reports with intelligent AI matching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,157 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidItem(data) {
+      return data.id is string && data.id.size() <= 128 &&
+        data.type in ['lost', 'found'] &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 150 &&
+        data.category is string && data.category.size() <= 60 &&
+        data.description is string && data.description.size() <= 2000 &&
+        data.location is string && data.location.size() <= 200 &&
+        data.date is string && data.date.size() <= 30 &&
+        data.status in ['active', 'potential_match', 'claimed', 'returned', 'closed'] &&
+        data.ownerId is string && data.ownerId.size() <= 128;
+    }
+
+    function isValidClaim(data) {
+      return data.id is string && data.id.size() <= 128 &&
+        data.itemId is string && data.itemId.size() <= 128 &&
+        data.itemTitle is string && data.itemTitle.size() <= 150 &&
+        data.itemType in ['lost', 'found'] &&
+        data.claimantId is string && data.claimantId.size() <= 128 &&
+        data.reporterId is string && data.reporterId.size() <= 128 &&
+        data.identifyingAnswers is string && data.identifyingAnswers.size() <= 1500 &&
+        data.status in ['pending', 'accepted', 'rejected', 'returned'];
+    }
+
+    function isValidMatch(data) {
+      return data.id is string && data.id.size() <= 128 &&
+        data.lostItemId is string && data.lostItemId.size() <= 128 &&
+        data.foundItemId is string && data.foundItemId.size() <= 128 &&
+        data.score is number &&
+        data.confidence in ['high', 'medium', 'low'] &&
+        data.explanation is string && data.explanation.size() <= 1500 &&
+        data.status in ['suggested', 'confirmed_by_user', 'dismissed'];
+    }
+
+    function isValidNotification(data) {
+      return data.id is string && data.id.size() <= 128 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.title is string && data.title.size() <= 150 &&
+        data.message is string && data.message.size() <= 1000 &&
+        data.type in ['match', 'claim', 'claim_update', 'status_update'] &&
+        data.read is bool;
+    }
+
+    // Connection test document
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // Public item reports
+    match /items/{itemId} {
+      allow read: if true;
+      allow create: if isSignedIn() &&
+        isValidId(itemId) &&
+        incoming().ownerId == request.auth.uid &&
+        isValidItem(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(itemId) &&
+        isValidItem(incoming()) &&
+        (
+          // Reporter editing their report
+          (existing().ownerId == request.auth.uid && incoming().ownerId == existing().ownerId) ||
+          // Status transition during verified claim/match
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'flaggedCount'])
+        );
+      allow delete: if isSignedIn() &&
+        isValidId(itemId) &&
+        existing().ownerId == request.auth.uid;
+    }
+
+    // Potential matches collection
+    match /potentialMatches/{matchId} {
+      allow read: if true;
+      allow create: if isSignedIn() &&
+        isValidId(matchId) &&
+        isValidMatch(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(matchId) &&
+        isValidMatch(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(matchId);
+    }
+
+    // Verification claims
+    match /claims/{claimId} {
+      allow get: if isSignedIn() &&
+        (resource.data.claimantId == request.auth.uid || resource.data.reporterId == request.auth.uid);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() &&
+        isValidId(claimId) &&
+        incoming().claimantId == request.auth.uid &&
+        isValidClaim(incoming());
+      allow update: if isSignedIn() &&
+        isValidId(claimId) &&
+        isValidClaim(incoming()) &&
+        (
+          // Reporter reviewing claim
+          (existing().reporterId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewNote', 'updatedAt'])) ||
+          // Claimant updating claim details
+          (existing().claimantId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['identifyingAnswers', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() &&
+        isValidId(claimId) &&
+        (existing().claimantId == request.auth.uid || existing().reporterId == request.auth.uid);
+    }
+
+    // User notifications
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        isValidId(notificationId) &&
+        isValidNotification(incoming());
+      allow update: if isSignedIn() &&
+        resource.data.userId == request.auth.uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Listing flags for suspicious content
+    match /listingFlags/{flagId} {
+      allow create: if isSignedIn() &&
+        isValidId(flagId) &&
+        incoming().reporterId == request.auth.uid &&
+        incoming().reason is string && incoming().reason.size() <= 500;
+      allow read: if isSignedIn();
+    }
+  }
+}
