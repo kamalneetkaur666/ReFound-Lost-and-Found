@@ -18,7 +18,7 @@ interface ProfileViewProps {
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
-  const { currentUser, items, claims, logoutUser } = useApp();
+  const { currentUser, items, claims, logoutUser, updateUserProfile } = useApp();
 
   const [department, setDepartment] = useState(currentUser?.department || 'Computer Science');
   const [phone, setPhone] = useState(currentUser?.phone || '(555) 321-7890');
@@ -46,10 +46,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigate }) => {
     c => c.claimantId === currentUser.uid || c.reporterId === currentUser.uid
   );
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (updateUserProfile) {
+      await updateUserProfile({ department, phone });
+    }
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setTimeout(() => setSaved(false), 2500);
   };
 
   return (

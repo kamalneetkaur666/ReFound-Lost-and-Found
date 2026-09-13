@@ -42,6 +42,7 @@ export const ItemDetailsView: React.FC<ItemDetailsViewProps> = ({
     updateItemReport,
     runAiMatchingForItem,
     flagListing,
+    openClaimDetailsModal,
     isAiMatching,
   } = useApp();
 
@@ -379,6 +380,87 @@ export const ItemDetailsView: React.FC<ItemDetailsViewProps> = ({
 
         {/* Right 1 Col: Actions & Ownership verification */}
         <div className="space-y-6">
+          {/* Claims Received or Submitted on this Item */}
+          {(() => {
+            const itemClaims = claims.filter(c => c.itemId === item.id);
+            const myClaim = itemClaims.find(c => currentUser && c.claimantId === currentUser.uid);
+
+            if (isOwner && itemClaims.length > 0) {
+              return (
+                <div className="bg-white rounded-2xl border border-indigo-200 p-5 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                      <h4 className="font-bold text-xs text-slate-900">
+                        Claims Received ({itemClaims.length})
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                      Action Required
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Campus students have submitted verification answers and contact details to connect.
+                  </p>
+                  <div className="space-y-2 pt-1">
+                    {itemClaims.map(c => (
+                      <div
+                        key={c.id}
+                        className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-bold text-slate-800 block truncate">
+                            {c.claimantName}
+                          </span>
+                          <span className="text-[10px] text-slate-500 truncate block">
+                            {c.claimantDepartment || 'Student'} • {c.status}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openClaimDetailsModal(c)}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shrink-0 flex items-center gap-1 shadow-2xs transition-colors"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>View Details</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+
+            if (myClaim) {
+              return (
+                <div className="bg-white rounded-2xl border border-emerald-200 p-5 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-emerald-600" />
+                      <h4 className="font-bold text-xs text-slate-900">Your Claim on this Item</h4>
+                    </div>
+                    <span className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      {myClaim.status}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    You submitted an ownership/found claim. Open the claim to view your message and profile contact info.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openClaimDetailsModal(myClaim)}
+                    className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>View Submitted Message & Contact Details</span>
+                  </button>
+                </div>
+              );
+            }
+
+            return null;
+          })()}
+
           {/* Action Card */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
             <h3 className="font-bold text-sm text-slate-900">Take Action</h3>

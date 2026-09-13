@@ -9,10 +9,12 @@ import { MyReportsView } from './components/MyReportsView.tsx';
 import { ProfileView } from './components/ProfileView.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
 import { ClaimModal } from './components/ClaimModal.tsx';
+import { ClaimDetailsModal } from './components/ClaimDetailsModal.tsx';
 import { ItemReport } from './types.ts';
 import { Sparkles, ShieldCheck, Heart, Github } from 'lucide-react';
 
 function AppContent() {
+  const { selectedClaimForModal, setSelectedClaimForModal } = useApp();
   const [currentView, setCurrentView] = useState<string>('landing');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -120,6 +122,14 @@ function AppContent() {
             setClaimModalItem(null);
             setCurrentView('my-reports');
           }}
+        />
+      )}
+
+      {selectedClaimForModal && (
+        <ClaimDetailsModal
+          claim={selectedClaimForModal}
+          onClose={() => setSelectedClaimForModal(null)}
+          onNavigateItem={handleItemClick}
         />
       )}
 

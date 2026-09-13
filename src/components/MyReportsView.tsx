@@ -16,6 +16,10 @@ import {
   PlusCircle,
   AlertCircle,
   Send,
+  Phone,
+  Mail,
+  MessageSquare,
+  Eye,
 } from 'lucide-react';
 
 interface MyReportsViewProps {
@@ -35,6 +39,7 @@ export const MyReportsView: React.FC<MyReportsViewProps> = ({
     deleteItemReport,
     updateItemReport,
     reviewClaim,
+    openClaimDetailsModal,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'items' | 'matches' | 'claims_received' | 'claims_sent'>('items');
@@ -407,9 +412,9 @@ export const MyReportsView: React.FC<MyReportsViewProps> = ({
                   key={claim.id}
                   className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-slate-900">
                           Claim for: {claim.itemTitle}
                         </span>
@@ -427,20 +432,56 @@ export const MyReportsView: React.FC<MyReportsViewProps> = ({
                           {claim.status}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Claimant: <strong className="text-slate-700">{claim.claimantName}</strong> ({claim.claimantEmail})
-                      </p>
+                      
+                      {/* Claimant Contact Details Summary */}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 pt-0.5">
+                        <span className="flex items-center gap-1 font-semibold text-slate-800">
+                          <span>{claim.claimantName}</span>
+                          <span className="text-slate-400 font-normal">({claim.claimantDepartment || 'Campus Student'})</span>
+                        </span>
+                        <a
+                          href={`mailto:${claim.claimantEmail}`}
+                          className="flex items-center gap-1 text-indigo-600 hover:underline"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>{claim.claimantEmail}</span>
+                        </a>
+                        {claim.claimantPhone && (
+                          <a
+                            href={`tel:${claim.claimantPhone}`}
+                            className="flex items-center gap-1 text-slate-600 hover:text-indigo-600"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>{claim.claimantPhone}</span>
+                          </a>
+                        )}
+                        {claim.claimantCampusId && (
+                          <span className="text-[11px] font-mono text-slate-400">
+                            ID: {claim.claimantCampusId}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <span className="text-[11px] text-slate-400">
-                      {new Date(claim.createdAt).toLocaleDateString()}
-                    </span>
+                    <div className="flex items-center gap-2 self-start">
+                      <button
+                        type="button"
+                        onClick={() => openClaimDetailsModal(claim)}
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>View Details & Contact</span>
+                      </button>
+                      <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                        {new Date(claim.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Claimant's answers */}
                   <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
                     <span className="font-bold text-slate-800 block">
-                      Claimant's Identifying Verification Details:
+                      Claimant's Identifying Verification Details / Message:
                     </span>
                     <p className="text-slate-700 whitespace-pre-wrap leading-relaxed">
                       "{claim.identifyingAnswers}"
@@ -470,16 +511,16 @@ export const MyReportsView: React.FC<MyReportsViewProps> = ({
                           onClick={() => reviewClaim(claim.id, 'accepted', reviewNote[claim.id])}
                           className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-2xs transition-colors"
                         >
-                          Accept & Release Contact
+                          Accept & Coordinate
                         </button>
                       </div>
                     </div>
                   ) : claim.status === 'accepted' ? (
-                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between text-xs text-emerald-900">
-                      <span>✓ Claim accepted. Coordinate pickup on campus.</span>
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-900">
+                      <span>✓ Claim accepted! Contact details are active above.</span>
                       <button
                         onClick={() => reviewClaim(claim.id, 'returned')}
-                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold"
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold self-start sm:self-auto"
                       >
                         Confirm Handover Completed
                       </button>
@@ -535,12 +576,22 @@ export const MyReportsView: React.FC<MyReportsViewProps> = ({
                     )}
                   </div>
 
-                  <button
-                    onClick={() => onNavigateItem(claim.itemId)}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 shrink-0 self-start sm:self-auto"
-                  >
-                    View Listing
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => openClaimDetailsModal(claim)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Details & Contact</span>
+                    </button>
+                    <button
+                      onClick={() => onNavigateItem(claim.itemId)}
+                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg"
+                    >
+                      View Listing
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

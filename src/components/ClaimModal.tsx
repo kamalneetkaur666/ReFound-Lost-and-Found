@@ -26,6 +26,8 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
   const { currentUser, items, submitClaim } = useApp();
 
   const [answers, setAnswers] = useState('');
+  const [phone, setPhone] = useState(currentUser?.phone || '(555) 234-5678');
+  const [department, setDepartment] = useState(currentUser?.department || 'Computer Science');
   const [selectedLostItemId, setSelectedLostItemId] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -49,7 +51,13 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
     setError('');
 
     try {
-      await submitClaim(item.id, answers.trim(), selectedLostItemId || undefined);
+      await submitClaim(
+        item.id,
+        answers.trim(),
+        selectedLostItemId || undefined,
+        phone.trim(),
+        department.trim()
+      );
       setSubmitted(true);
       setTimeout(() => {
         onSuccess();
@@ -160,17 +168,49 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
               )}
             </div>
 
-            {/* Claimant info summary */}
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Submitting as</span>
-                <span className="font-semibold text-slate-800">
-                  {currentUser?.displayName || 'Campus Student'} ({currentUser?.email || 'student@campus.edu'})
-                </span>
+            {/* Claimant info & contact details summary */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Submitting as</span>
+                  <span className="font-semibold text-slate-800">
+                    {currentUser?.displayName || 'Campus Student'} ({currentUser?.email || 'student@campus.edu'})
+                  </span>
+                </div>
+                <div className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-[10px] text-indigo-700 font-semibold">
+                  Campus Verified
+                </div>
               </div>
-              <div className="px-2 py-0.5 rounded bg-slate-200/80 text-[10px] font-mono text-slate-700 font-semibold">
-                Campus Verified
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200/60">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">
+                    Your Phone (for handover)
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    placeholder="(555) 234-5678"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">
+                    Department / Major
+                  </label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={e => setDepartment(e.target.value)}
+                    placeholder="e.g. Computer Science"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
+              <p className="text-[10px] text-slate-400">
+                Your contact details will be shared with the report owner to coordinate verification and handover.
+              </p>
             </div>
 
             {/* Submit buttons */}

@@ -54,7 +54,15 @@ export interface Claim {
   claimantId: string;
   claimantName: string;
   claimantEmail: string;
+  claimantPhone?: string;
+  claimantDepartment?: string;
+  claimantCampusId?: string;
   reporterId: string;
+  reporterName?: string;
+  reporterEmail?: string;
+  reporterPhone?: string;
+  reporterDepartment?: string;
+  reporterCampusId?: string;
   identifyingAnswers: string;
   status: 'pending' | 'accepted' | 'rejected' | 'returned';
   reviewNote?: string;
@@ -69,6 +77,14 @@ export interface NotificationItem {
   message: string;
   type: 'match' | 'claim' | 'claim_update' | 'status_update';
   relatedItemId?: string;
+  relatedClaimId?: string;
+  senderId?: string;
+  senderName?: string;
+  senderEmail?: string;
+  senderPhone?: string;
+  senderDepartment?: string;
+  senderCampusId?: string;
+  claimAnswers?: string;
   read: boolean;
   createdAt: string;
 }

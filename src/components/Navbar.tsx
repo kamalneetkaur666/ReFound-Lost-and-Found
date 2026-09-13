@@ -13,6 +13,7 @@ import {
   Clock,
   ShieldCheck,
   ChevronDown,
+  MessageSquare,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -35,6 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     unreadNotificationCount,
     markNotificationRead,
     markAllNotificationsRead,
+    openClaimDetailsModal,
     setDemoUser,
   } = useApp();
 
@@ -218,9 +220,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                           key={n.id}
                           onClick={() => {
                             markNotificationRead(n.id);
-                            if (n.relatedItemId) {
+                            setShowNotifMenu(false);
+                            if (n.type === 'claim' || n.type === 'claim_update' || n.relatedClaimId) {
+                              openClaimDetailsModal(n);
+                            } else if (n.relatedItemId) {
                               onNavigate('item-details', n.relatedItemId);
-                              setShowNotifMenu(false);
                             }
                           }}
                           className={`p-3.5 hover:bg-slate-50 transition-colors cursor-pointer flex gap-3 ${
@@ -236,7 +240,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                                 : 'bg-emerald-100 text-emerald-700'
                             }`}
                           >
-                            <Sparkles className="w-4 h-4" />
+                            {n.type === 'claim' ? (
+                              <MessageSquare className="w-4 h-4" />
+                            ) : (
+                              <Sparkles className="w-4 h-4" />
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline justify-between gap-1">
@@ -250,12 +258,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                             <p className="text-xs text-slate-600 line-clamp-2 mt-0.5">
                               {n.message}
                             </p>
-                            <span className="text-[10px] text-slate-400 mt-1 block">
-                              {new Date(n.createdAt).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
+                            <div className="flex items-center justify-between gap-2 mt-1.5">
+                              <span className="text-[10px] text-slate-400 block">
+                                {new Date(n.createdAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                              {(n.type === 'claim' || n.type === 'claim_update' || n.relatedClaimId) && (
+                                <span className="text-[10px] font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                  <span>View Message & Profile</span>
+                                  <span>&rarr;</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))

@@ -48,6 +48,7 @@ export interface ToastMessage {
   message: string;
   type: 'info' | 'success' | 'alert';
   itemId?: string;
+  claimId?: string;
 }
 
 interface AppContextType {
@@ -62,6 +63,10 @@ interface AppContextType {
   isAiMatching: boolean;
   activeToast: ToastMessage | null;
   dismissToast: () => void;
+  selectedClaimForModal: Claim | null;
+  setSelectedClaimForModal: (claim: Claim | null) => void;
+  openClaimDetailsModal: (claimOrId: Claim | string, relatedItemId?: string, notification?: NotificationItem) => void;
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
@@ -72,7 +77,13 @@ interface AppContextType {
   updateItemReport: (id: string, updates: Partial<ItemReport>) => Promise<void>;
   deleteItemReport: (id: string) => Promise<void>;
   runAiMatchingForItem: (item: ItemReport) => Promise<PotentialMatch[]>;
-  submitClaim: (itemId: string, answers: string, linkedLostItemId?: string) => Promise<Claim>;
+  submitClaim: (
+    itemId: string,
+    answers: string,
+    linkedLostItemId?: string,
+    contactPhone?: string,
+    department?: string
+  ) => Promise<Claim>;
   reviewClaim: (claimId: string, status: 'accepted' | 'rejected' | 'returned', reviewNote?: string) => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
@@ -99,6 +110,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [loading, setLoading] = useState<boolean>(true);
   const [isAiMatching, setIsAiMatching] = useState<boolean>(false);
   const [activeToast, setActiveToast] = useState<ToastMessage | null>(null);
+  const [selectedClaimForModal, setSelectedClaimForModal] = useState<Claim | null>(null);
 
   const prevNotificationIds = useRef<Set<string>>(new Set(SAMPLE_NOTIFICATIONS.map(n => n.id)));
 
@@ -111,6 +123,74 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const dismissToast = () => setActiveToast(null);
+
+  const openClaimDetailsModal = (
+    claimOrId: Claim | string,
+    relatedItemId?: string,
+    notification?: NotificationItem
+  ) => {
+    if (typeof claimOrId !== 'string') {
+      setSelectedClaimForModal(claimOrId);
+      return;
+    }
+    // Search existing claims
+    let found = claims.find(c => c.id === claimOrId);
+    if (!found && relatedItemId) {
+      found = claims.find(c => c.itemId === relatedItemId);
+    }
+    if (found) {
+      setSelectedClaimForModal(found);
+    } else if (notification) {
+      // Create fallback claim from notification
+      const fallbackClaim: Claim = {
+        id: notification.relatedClaimId || claimOrId || 'claim-' + Date.now(),
+        itemId: notification.relatedItemId || relatedItemId || '',
+        itemTitle:
+          notification.title
+            .replace('Claim Alert on Matching Found Item', '')
+            .replace('Someone Found Your Item!', '')
+            .replace('New Ownership Claim Submitted', '')
+            .trim() || 'Lost & Found Item',
+        itemType: 'found',
+        claimantId: notification.senderId || 'student-user',
+        claimantName: notification.senderName || 'Campus Student',
+        claimantEmail: notification.senderEmail || 'student@campus.edu',
+        claimantPhone: notification.senderPhone || '(555) 234-5678',
+        claimantDepartment: notification.senderDepartment || 'Campus Student Body',
+        claimantCampusId: notification.senderCampusId || 'CAMPUS-STUDENT',
+        reporterId: currentUser?.uid || '',
+        reporterName: currentUser?.displayName,
+        reporterEmail: currentUser?.email,
+        reporterPhone: currentUser?.phone,
+        reporterDepartment: currentUser?.department,
+        reporterCampusId: currentUser?.campusId,
+        identifyingAnswers: notification.claimAnswers || notification.message,
+        status: 'pending',
+        createdAt: notification.createdAt,
+        updatedAt: notification.createdAt,
+      };
+      setSelectedClaimForModal(fallbackClaim);
+    }
+  };
+
+  const updateUserProfile = async (updates: Partial<UserProfile>) => {
+    if (!currentUser) return;
+    const updated: UserProfile = {
+      ...currentUser,
+      ...updates,
+    };
+    setCurrentUser(updated);
+    try {
+      await setDoc(doc(db, 'users', updated.uid), updated, { merge: true });
+    } catch (err) {
+      console.warn('Firestore user profile update note:', err);
+    }
+    showToast({
+      title: 'Profile Updated',
+      message: 'Your campus contact details have been updated.',
+      type: 'success',
+    });
+  };
 
   // Initialize connection and auth listener
   useEffect(() => {
@@ -579,7 +659,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const submitClaim = async (
     itemId: string,
     identifyingAnswers: string,
-    linkedLostItemId?: string
+    linkedLostItemId?: string,
+    contactPhone?: string,
+    department?: string
   ): Promise<Claim> => {
     const targetItem = items.find(i => i.id === itemId);
     if (!targetItem) throw new Error('Item not found');
@@ -589,6 +671,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const claimantId = currentUser?.uid || 'guest-claimant';
     const claimantName = currentUser?.displayName || 'Claimant Student';
     const claimantEmail = currentUser?.email || 'claimant@campus.edu';
+    const claimantPhone = contactPhone || currentUser?.phone || '(555) 234-5678';
+    const claimantDept = department || currentUser?.department || 'Campus Student Body';
+    const claimantCampusId = currentUser?.campusId || 'CAMPUS-' + claimantId.substring(0, 6).toUpperCase();
 
     const newClaim: Claim = {
       id: claimId,
@@ -598,7 +683,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       claimantId,
       claimantName,
       claimantEmail,
+      claimantPhone,
+      claimantDepartment: claimantDept,
+      claimantCampusId,
       reporterId: targetItem.ownerId,
+      reporterName: targetItem.ownerName,
+      reporterEmail: targetItem.ownerEmail,
+      reporterPhone: '(555) 876-5432',
+      reporterDepartment: 'Campus Member',
+      reporterCampusId: 'CAMPUS-' + targetItem.ownerId.substring(0, 6).toUpperCase(),
       identifyingAnswers: linkedLostItemId
         ? `${identifyingAnswers}\n[Linked Lost Report: ${linkedLostItemId}]`
         : identifyingAnswers,
@@ -617,9 +710,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: 'notif-' + Date.now() + '-finder',
         userId: targetItem.ownerId,
         title: 'New Ownership Claim Submitted',
-        message: `${claimantName} submitted a verification claim for your found item "${targetItem.title}". Review their identifying details.`,
+        message: `${claimantName} submitted a verification claim for your found item "${targetItem.title}". Review their message & contact details.`,
         type: 'claim',
         relatedItemId: targetItem.id,
+        relatedClaimId: claimId,
+        senderId: claimantId,
+        senderName: claimantName,
+        senderEmail: claimantEmail,
+        senderPhone: claimantPhone,
+        senderDepartment: claimantDept,
+        senderCampusId: claimantCampusId,
+        claimAnswers: identifyingAnswers,
         read: false,
         createdAt: now,
       });
@@ -660,6 +761,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             message: `Your ownership claim for found item "${targetItem.title}" has been submitted to the finder (${targetItem.ownerName}). You can track review progress in My Reports.`,
             type: 'claim',
             relatedItemId: targetItem.id,
+            relatedClaimId: claimId,
+            senderId: targetItem.ownerId,
+            senderName: targetItem.ownerName,
+            senderEmail: targetItem.ownerEmail,
+            senderPhone: '(555) 876-5432',
+            senderDepartment: 'Campus Member',
+            senderCampusId: 'CAMPUS-' + targetItem.ownerId.substring(0, 6).toUpperCase(),
+            claimAnswers: identifyingAnswers,
             read: false,
             createdAt: now,
           });
@@ -672,9 +781,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             id: 'notif-' + Date.now() + '-lost-owner-' + lostReport.id,
             userId: lostReport.ownerId,
             title: 'Claim Alert on Matching Found Item',
-            message: `Another student submitted an ownership claim for found item "${targetItem.title}" (matching your lost report "${lostReport.title}"). If this item is yours, please review the listing or submit your verification details.`,
+            message: `Another student submitted an ownership claim for found item "${targetItem.title}" (matching your lost report "${lostReport.title}"). Click to review message & contact details or verify your report.`,
             type: 'claim',
             relatedItemId: targetItem.id,
+            relatedClaimId: claimId,
+            senderId: claimantId,
+            senderName: claimantName,
+            senderEmail: claimantEmail,
+            senderPhone: claimantPhone,
+            senderDepartment: claimantDept,
+            senderCampusId: claimantCampusId,
+            claimAnswers: identifyingAnswers,
             read: false,
             createdAt: now,
           });
@@ -688,9 +805,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: 'notif-' + Date.now() + '-claimant-receipt',
           userId: claimantId,
           title: 'Claim Submitted Successfully',
-          message: `Your ownership claim for "${targetItem.title}" was submitted to ${targetItem.ownerName}. You will be notified when it is reviewed.`,
+          message: `Your ownership claim for "${targetItem.title}" was submitted to ${targetItem.ownerName}. Click to review your submitted message and details.`,
           type: 'claim',
           relatedItemId: targetItem.id,
+          relatedClaimId: claimId,
+          senderId: targetItem.ownerId,
+          senderName: targetItem.ownerName,
+          senderEmail: targetItem.ownerEmail,
+          senderPhone: '(555) 876-5432',
+          senderDepartment: 'Campus Member',
+          senderCampusId: 'CAMPUS-' + targetItem.ownerId.substring(0, 6).toUpperCase(),
+          claimAnswers: identifyingAnswers,
           read: false,
           createdAt: now,
         });
@@ -702,9 +827,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: 'notif-' + Date.now() + '-lost-owner-found',
         userId: targetItem.ownerId,
         title: 'Someone Found Your Item!',
-        message: `${claimantName} has reported finding your lost "${targetItem.title}"! Review their details to coordinate a campus return.`,
+        message: `${claimantName} has reported finding your lost "${targetItem.title}"! Click to view their message & contact details to coordinate campus return.`,
         type: 'claim',
         relatedItemId: targetItem.id,
+        relatedClaimId: claimId,
+        senderId: claimantId,
+        senderName: claimantName,
+        senderEmail: claimantEmail,
+        senderPhone: claimantPhone,
+        senderDepartment: claimantDept,
+        senderCampusId: claimantCampusId,
+        claimAnswers: identifyingAnswers,
         read: false,
         createdAt: now,
       });
@@ -713,9 +846,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: 'notif-' + Date.now() + '-finder-receipt',
         userId: claimantId,
         title: 'Finder Message Sent',
-        message: `The student who lost "${targetItem.title}" has been notified. They will review your note to coordinate handover.`,
+        message: `The student who lost "${targetItem.title}" has been notified. They will review your note and contact you to coordinate handover.`,
         type: 'claim',
         relatedItemId: targetItem.id,
+        relatedClaimId: claimId,
+        senderId: targetItem.ownerId,
+        senderName: targetItem.ownerName,
+        senderEmail: targetItem.ownerEmail,
+        senderPhone: '(555) 876-5432',
+        senderDepartment: 'Campus Member',
+        senderCampusId: 'CAMPUS-' + targetItem.ownerId.substring(0, 6).toUpperCase(),
+        claimAnswers: identifyingAnswers,
         read: false,
         createdAt: now,
       });
@@ -739,6 +880,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       message: `Your verification details for "${targetItem.title}" have been submitted.`,
       type: 'success',
       itemId: targetItem.id,
+      claimId,
     });
 
     return newClaim;
@@ -765,7 +907,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const notificationsToDispatch: NotificationItem[] = [];
 
-    // 1. Notify the claimant about the review outcome
+    // 1. Notify the claimant about the review outcome with full reporter profile details
     notificationsToDispatch.push({
       id: 'notif-' + Date.now() + '-claim-outcome',
       userId: targetClaim.claimantId,
@@ -777,12 +919,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           : 'Claim Update: Verification Rejected',
       message:
         status === 'accepted'
-          ? `Your claim for "${targetClaim.itemTitle}" was accepted. You can now coordinate pickup.`
+          ? `Your claim for "${targetClaim.itemTitle}" was accepted. Click to view reporter's contact details and coordinate pickup.`
           : status === 'returned'
           ? `The item "${targetClaim.itemTitle}" has been confirmed returned. Thank you!`
           : `Your claim for "${targetClaim.itemTitle}" was declined by the reporter.${reviewNote ? ` Note: "${reviewNote}"` : ''}`,
       type: 'claim_update',
       relatedItemId: targetClaim.itemId,
+      relatedClaimId: targetClaim.id,
+      senderId: targetClaim.reporterId,
+      senderName: targetClaim.reporterName || currentUser?.displayName,
+      senderEmail: targetClaim.reporterEmail || currentUser?.email,
+      senderPhone: targetClaim.reporterPhone || currentUser?.phone,
+      senderDepartment: targetClaim.reporterDepartment || currentUser?.department,
+      senderCampusId: targetClaim.reporterCampusId || currentUser?.campusId,
+      claimAnswers: targetClaim.identifyingAnswers,
       read: false,
       createdAt: now,
     });
@@ -829,6 +979,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 : `A previous claim on found item "${targetItem.title}" was declined. The item is still available to claim if it belongs to you.`,
             type: 'status_update',
             relatedItemId: targetItem.id,
+            relatedClaimId: targetClaim.id,
             read: false,
             createdAt: now,
           });
@@ -851,6 +1002,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       title: status === 'accepted' ? 'Claim Accepted' : status === 'returned' ? 'Item Marked Returned' : 'Claim Declined',
       message: `The claim for "${targetClaim.itemTitle}" has been updated.`,
       type: status === 'rejected' ? 'alert' : 'success',
+      itemId: targetClaim.itemId,
+      claimId: targetClaim.id,
     });
   };
 
@@ -918,6 +1071,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isAiMatching,
         activeToast,
         dismissToast,
+        selectedClaimForModal,
+        setSelectedClaimForModal,
+        openClaimDetailsModal,
+        updateUserProfile,
         loginWithGoogle,
         loginWithEmail,
         signUpWithEmail,
